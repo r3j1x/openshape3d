@@ -963,7 +963,7 @@ final class ElementNamingTests: XCTestCase {
         let base = evaluate(fixture.nodes, fixture.sketches)
         XCTAssertTrue(base.errors.isEmpty, "\(base.errors)")
         let (chamfer, ridge) = try chamferNode(for: fixture, from: base)
-        guard case let .chamfer(body, edges, setback) = chamfer.kind else {
+        guard case let .chamfer(body, edges, setback, _) = chamfer.kind else {
             return XCTFail("the fixture builds a chamfer node")
         }
         // The same crease, as three picked segments.

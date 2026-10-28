@@ -105,14 +105,17 @@ nonisolated enum KernelCaptureReplay {
                 try input("shape"), at: points(),
                 radius: try number("radius"), tolerance: try number("tolerance")))
         case "chamfer":
+            // Older captures predate the angle: absent = symmetric.
+            let angle = (params["angleDegrees"] as? Double) ?? 0
             if let indices = params["edgeIndices"] as? [Int] {
                 return outcome(op, OCCTKernel.chamferResult(
                     try input("shape"), edgeIndices: indices,
-                    distance: try number("distance")))
+                    distance: try number("distance"), angleDegrees: angle))
             }
             return outcome(op, OCCTKernel.chamferResult(
                 try input("shape"), at: points(),
-                distance: try number("distance"), tolerance: try number("tolerance")))
+                distance: try number("distance"), angleDegrees: angle,
+                tolerance: try number("tolerance")))
         case "shell":
             return outcome(op, OCCTKernel.shellResult(
                 try input("shape"), openingAt: points(),

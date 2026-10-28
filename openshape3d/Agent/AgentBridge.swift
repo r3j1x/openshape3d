@@ -533,9 +533,9 @@ final class AgentBridge {
                     boolean: intent),
                 outputBodyIDs: [BodyID()]), on: viewModel)
 
-        case let .blend(bodyID, isFillet, amount, edges):
+        case let .blend(bodyID, isFillet, amount, edges, angle):
             return execBlend(body: bodyID, isFillet: isFillet, amount: amount,
-                             edgeIndices: edges, on: viewModel)
+                             angle: angle, edgeIndices: edges, on: viewModel)
 
         case let .shell(bodyID, thickness, openFaces):
             return execShell(body: bodyID, thickness: thickness,
@@ -1170,7 +1170,7 @@ final class AgentBridge {
     /// node through the same path as a hand-picked blend, so the feature
     /// replays identically.
     private func execBlend(body bodyID: BodyID, isFillet: Bool, amount: Double,
-                           edgeIndices: [Int],
+                           angle: Double = 0, edgeIndices: [Int],
                            on viewModel: EditorViewModel) -> AgentResponse {
         let session = viewModel.session
         let context: (body: Body, brep: BRepHandle)
@@ -1222,7 +1222,8 @@ final class AgentBridge {
             name: isFillet ? "Fillet" : "Chamfer",
             kind: isFillet
                 ? .fillet(body: ref, edges: refs, radius: Expr(value: amount))
-                : .chamfer(body: ref, edges: refs, setback: Expr(value: amount)),
+                : .chamfer(body: ref, edges: refs, setback: Expr(value: amount),
+                           angle: angle == 0 ? nil : Expr(value: angle)),
             outputBodyIDs: [bodyID])
         return record(node, on: viewModel)
     }

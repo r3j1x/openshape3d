@@ -709,20 +709,28 @@ nonisolated enum OCCTKernel {
 
     /// Bevel the analytic edges nearest `points` by `distance` (spec §4.3
     /// chamfer). Same contract as `filletResult`.
+    /// `angleDegrees` 0 = symmetric; otherwise `distance` runs along the
+    /// edge's reference face and the bevel meets that face at the angle.
     static func chamferResult(_ handle: BRepHandle, at points: [SIMD3<Double>],
-                              distance: Double, tolerance: Double)
+                              distance: Double, angleDegrees: Double = 0,
+                              tolerance: Double)
         -> Result<BRepHandle, OCCTOpError> {
         guard !points.isEmpty, distance > 0 else {
             return .failure(.kernelRefused("nothing to chamfer"))
         }
+        guard let angleRadians = chamferAngleRadians(angleDegrees) else {
+            return .failure(.kernelRefused("chamfer angle must be between 0° and 90°"))
+        }
         let status = OCCTOpStatus()
         guard let shape = OCCTBridge.chamferedShape(
             handle.shape, atWorldPoints: pack(points),
-            distance: distance, tolerance: tolerance, status: status) else {
+            distance: distance, angleRadians: angleRadians,
+            tolerance: tolerance, status: status) else {
             let error = OCCTOpError(status)
             KernelCapture.recordFailure(
                 op: "chamfer", inputs: [("shape", handle)],
-                params: ["distance": distance, "tolerance": tolerance,
+                params: ["distance": distance, "angleDegrees": angleDegrees,
+                         "tolerance": tolerance,
                          "points": points.map { [$0.x, $0.y, $0.z] }],
                 error: error)
             return .failure(error)
@@ -734,6 +742,15 @@ nonisolated enum OCCTKernel {
                         distance: Double, tolerance: Double) -> BRepHandle? {
         try? chamferResult(handle, at: points, distance: distance,
                            tolerance: tolerance).get()
+    }
+
+    /// Chamfer angle in radians for the kernel: 0 (symmetric) when unset,
+    /// nil when outside the open range (0°, 90°) — 0° and 90° both degenerate
+    /// to a zero-width bevel. Internal: the ancestry variant shares it.
+    static func chamferAngleRadians(_ degrees: Double) -> Double? {
+        if degrees == 0 { return 0 }
+        guard degrees > 0.01, degrees < 89.99 else { return nil }
+        return degrees * .pi / 180
     }
 
     // MARK: Identity-addressed blends (TOPO_NAMING_HISTORY_DESIGN step 4b)
@@ -857,18 +874,24 @@ nonisolated enum OCCTKernel {
     }
 
     static func chamferResult(_ handle: BRepHandle, edgeIndices: [Int],
-                              distance: Double) -> Result<BRepHandle, OCCTOpError> {
+                              distance: Double, angleDegrees: Double = 0)
+        -> Result<BRepHandle, OCCTOpError> {
         guard !edgeIndices.isEmpty, distance > 0 else {
             return .failure(.kernelRefused("nothing to chamfer"))
+        }
+        guard let angleRadians = chamferAngleRadians(angleDegrees) else {
+            return .failure(.kernelRefused("chamfer angle must be between 0° and 90°"))
         }
         let status = OCCTOpStatus()
         guard let shape = OCCTBridge.chamferedShape(
             handle.shape, edgeIndices: packIndices(edgeIndices),
-            distance: distance, status: status, history: nil) else {
+            distance: distance, angleRadians: angleRadians,
+            status: status, history: nil) else {
             let error = OCCTOpError(status)
             KernelCapture.recordFailure(
                 op: "chamfer", inputs: [("shape", handle)],
-                params: ["distance": distance, "edgeIndices": edgeIndices],
+                params: ["distance": distance, "angleDegrees": angleDegrees,
+                         "edgeIndices": edgeIndices],
                 error: error)
             return .failure(error)
         }

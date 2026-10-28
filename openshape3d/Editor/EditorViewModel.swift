@@ -4478,6 +4478,11 @@ final class EditorViewModel {
     var blendValue: Double = 1 {
         didSet { if blendValue != oldValue { updateBlendPreview() } }
     }
+    /// Chamfer only: the bevel angle in degrees against the reference face
+    /// (`blendValue` runs along that face). 0 = the symmetric chamfer.
+    var blendAngle: Double = 0 {
+        didSet { if blendAngle != oldValue { updateBlendPreview() } }
+    }
     /// Live result preview: the source body with the pending blend applied,
     /// rendered IN PLACE of the source while the pick is armed (same swap the
     /// face push/pull preview uses). Monotonic revision keeps the GPU cache
@@ -4499,6 +4504,7 @@ final class EditorViewModel {
         // tool gets an unobstructed picking surface.
         selection.removeAll()
         blendValue = 1
+        blendAngle = 0
         blendPreview = nil
         mode = .pickingBlendEdges(kind)
     }
@@ -4542,12 +4548,14 @@ final class EditorViewModel {
         let kind: BlendKind
         let refs: [EdgeRef]
         let amount: Double
+        var angle = 0.0
         let bodyRef: BodyRef
         switch node.kind {
         case let .fillet(body, edges, radius):
             kind = .fillet; refs = edges; amount = radius.value; bodyRef = body
-        case let .chamfer(body, edges, setback):
+        case let .chamfer(body, edges, setback, chamferAngle):
             kind = .chamfer; refs = edges; amount = setback.value; bodyRef = body
+            angle = chamferAngle?.value ?? 0
         default:
             return false
         }
@@ -4575,6 +4583,7 @@ final class EditorViewModel {
         blendEditSource = source
         blendBodyID = bodyRef.bodyID
         blendValue = amount
+        blendAngle = angle
         blendPreview = nil
         mode = .pickingBlendEdges(kind)
         updateBlendPreview()
@@ -4685,6 +4694,7 @@ final class EditorViewModel {
                 ? OCCTKernel.filletResult(brep, at: midpoints, radius: blendValue,
                                           tolerance: tolerance)
                 : OCCTKernel.chamferResult(brep, at: midpoints, distance: blendValue,
+                                           angleDegrees: blendAngle,
                                            tolerance: tolerance)
             switch blended {
             case let .failure(error):
@@ -4698,6 +4708,10 @@ final class EditorViewModel {
                 blendPreviewFailure = nil
                 return result
             }
+        }
+        if kind == .chamfer, blendAngle != 0 {
+            blendPreviewFailure = "A chamfer angle needs an exact (B-rep) body."
+            return nil
         }
         let mesh = blendedMesh(kind, source: source)
         guard !mesh.polygons.isEmpty else {
@@ -4751,7 +4765,8 @@ final class EditorViewModel {
             blendPreviewFailure = nil
             return
         }
-        guard !blendSelectedEdges.isEmpty, blendValue > 1e-6 else {
+        guard !blendSelectedEdges.isEmpty, blendValue > 1e-6,
+              OCCTKernel.chamferAngleRadians(blendAngle) != nil else {
             // While EDITING, an empty pick still has something to show: the
             // body without the blend. Falling through to nil would display the
             // document's copy, which still has the old blend on it — so
@@ -4782,6 +4797,7 @@ final class EditorViewModel {
     var canCommitBlend: Bool {
         if case .pickingBlendEdges = mode {
             return !blendSelectedEdges.isEmpty && blendValue > 1e-6
+                && OCCTKernel.chamferAngleRadians(blendAngle) != nil
                 && blendPreview != nil
         }
         return false
@@ -5019,7 +5035,8 @@ final class EditorViewModel {
             }
             let after: FeatureKind = kind == .fillet
                 ? .fillet(body: bodyRef, edges: edgeRefs, radius: Expr(value: blendValue))
-                : .chamfer(body: bodyRef, edges: edgeRefs, setback: Expr(value: blendValue))
+                : .chamfer(body: bodyRef, edges: edgeRefs, setback: Expr(value: blendValue),
+                           angle: blendAngle == 0 ? nil : Expr(value: blendAngle))
             prepareForHistoryChange()
             resetBlendState()
             session.editFeature(featureID, to: after)
@@ -5056,7 +5073,8 @@ final class EditorViewModel {
                 name: kind.title,
                 kind: kind == .fillet
                     ? .fillet(body: bodyRef, edges: edgeRefs, radius: Expr(value: blendValue))
-                    : .chamfer(body: bodyRef, edges: edgeRefs, setback: Expr(value: blendValue)),
+                    : .chamfer(body: bodyRef, edges: edgeRefs, setback: Expr(value: blendValue),
+                               angle: blendAngle == 0 ? nil : Expr(value: blendAngle)),
                 outputBodyIDs: [bodyID])
             session.perform(CompositeCommand(
                 title: kind.title, commands: [replace, AppendFeatureCommand(node: node)]))
@@ -18286,7 +18304,7 @@ final class EditorViewModel {
             ]
         case let .revolve(_, _, _, angle, _):
             return [FeatureScalar(key: .primary, label: "Angle", unit: "°", value: angle.value)]
-        case let .chamfer(_, _, setback):
+        case let .chamfer(_, _, setback, _):
             return [FeatureScalar(key: .primary, label: "Setback", unit: "mm", value: setback.value)]
         case let .fillet(_, _, radius):
             return [FeatureScalar(key: .primary, label: "Radius", unit: "mm", value: radius.value)]
@@ -18801,8 +18819,8 @@ final class EditorViewModel {
             return .revolve(
                 profile: profile, plane: plane, axis: axis,
                 angle: expr, boolean: boolean)
-        case let .chamfer(body, edges, _):
-            return .chamfer(body: body, edges: edges, setback: expr)
+        case let .chamfer(body, edges, _, angle):
+            return .chamfer(body: body, edges: edges, setback: expr, angle: angle)
         case let .fillet(body, edges, _):
             return .fillet(body: body, edges: edges, radius: expr)
         case let .shell(body, openFaces, _):
@@ -18923,8 +18941,9 @@ final class EditorViewModel {
         case .transform: return "Move"
         case .mirror: return "Mirror"
         case let .pattern(_, spec): return "Pattern ×\(spec.count)"
-        case let .chamfer(_, edges, setback):
-            return "Chamfer \(fmt(setback.value)) mm (\(edges.count) edge\(edges.count == 1 ? "" : "s"))"
+        case let .chamfer(_, edges, setback, angle):
+            let tilt = angle.map { " × \(fmt($0.value))°" } ?? ""
+            return "Chamfer \(fmt(setback.value)) mm\(tilt) (\(edges.count) edge\(edges.count == 1 ? "" : "s"))"
         case let .fillet(_, edges, radius):
             return "Fillet \(fmt(radius.value)) mm (\(edges.count) edge\(edges.count == 1 ? "" : "s"))"
         case let .shell(_, openFaces, thickness):

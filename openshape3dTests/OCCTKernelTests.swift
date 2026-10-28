@@ -147,6 +147,31 @@ final class OCCTKernelTests: XCTestCase {
         XCTAssertFalse(OCCTKernel.renderMesh(from: chamfered).positions.isEmpty)
     }
 
+    /// A distance+angle chamfer removes a right triangle of legs `d` and
+    /// `d·tan(angle)`, so against the symmetric chamfer (legs `d`, `d`) it
+    /// removes `tan(angle)` times the material — whichever face is the
+    /// reference. 45° must equal the symmetric one.
+    func testChamferAngleScalesTheRemovedWedge() throws {
+        let box = try XCTUnwrap(OCCTKernel.primitiveShape(
+            .box(width: 10, depth: 10, height: 10), placement: .identity))
+        let pick = [SIMD3<Double>(5, 5, 5)]
+        func removed(angle: Double) throws -> Double {
+            let result = try OCCTKernel.chamferResult(
+                box, at: pick, distance: 2, angleDegrees: angle, tolerance: 1.0).get()
+            return box.volume - result.volume
+        }
+        let symmetric = try removed(angle: 0)
+        XCTAssertGreaterThan(symmetric, 0)
+        XCTAssertEqual(try removed(angle: 45), symmetric, accuracy: 1e-6)
+        XCTAssertEqual(try removed(angle: 30), symmetric * tan(30 * .pi / 180),
+                       accuracy: 1e-6)
+        XCTAssertEqual(try removed(angle: 60), symmetric * tan(60 * .pi / 180),
+                       accuracy: 1e-6)
+        XCTAssertThrowsError(try OCCTKernel.chamferResult(
+            box, at: pick, distance: 2, angleDegrees: 90, tolerance: 1.0).get(),
+                             "90° is a zero-width bevel")
+    }
+
     /// G2 acceptance — shelling a CYLINDER must give a tube: two concentric
     /// cylindrical faces. This is the case the mesh inset approximation gets
     /// wrong, since it is only honest on prismatic bodies.

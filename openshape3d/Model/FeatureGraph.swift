@@ -194,7 +194,11 @@ nonisolated enum FeatureKind: Codable, Sendable {
     case draftFace(face: FaceRef, neutralOrigin: PointWrapper,
                    neutralNormal: PointWrapper, angle: Expr)
     /// Phase E: bevel the referenced convex edges of `body` by a flat `setback`.
-    case chamfer(body: BodyRef, edges: [EdgeRef], setback: Expr)
+    /// `angle` (degrees, 0 < a < 90; nil = symmetric) turns it into a
+    /// distance-and-angle chamfer: `setback` runs along the edge's reference
+    /// face and the bevel meets that face at `angle`. Optional, so projects
+    /// saved before the angle existed decode as symmetric.
+    case chamfer(body: BodyRef, edges: [EdgeRef], setback: Expr, angle: Expr? = nil)
     /// Phase E: round the referenced convex edges of `body` to `radius`.
     case fillet(body: BodyRef, edges: [EdgeRef], radius: Expr)
     /// Phase E: hollow `body` to a wall of `thickness`, cutting the referenced
@@ -324,7 +328,7 @@ nonisolated extension FeatureNode {
         case let .boolean(_, target, tools):
             return [target.bodyID] + tools.map(\.bodyID)
         case let .transform(body, _), let .mirror(body, _, _), let .pattern(body, _),
-             let .chamfer(body, _, _), let .fillet(body, _, _), let .shell(body, _, _),
+             let .chamfer(body, _, _, _), let .fillet(body, _, _), let .shell(body, _, _),
              let .deleteFace(body, _), let .imprint(body, _):
             return [body.bodyID]
         case let .pushPull(face, _, _), let .moveFace(face, _), let .scaleFace(face, _),
@@ -582,9 +586,10 @@ nonisolated extension FeatureGraph {
                 into: &state, next: nextRevision)
         case let .pattern(body, spec):
             evalPattern(node, bodyRef: body, spec: spec, into: &state, next: nextRevision)
-        case let .chamfer(body, edges, setback):
+        case let .chamfer(body, edges, setback, angle):
             evalEdgeBlend(
                 node, bodyRef: body, edgeRefs: edges, amount: setback.value,
+                angleDegrees: angle?.value ?? 0,
                 isFillet: false, into: &state, next: nextRevision)
         case let .fillet(body, edges, radius):
             evalEdgeBlend(
@@ -1117,10 +1122,10 @@ nonisolated extension FeatureGraph {
             return .fillet(body: body,
                            edges: edges.map { $0 == ref ? upgraded : $0 },
                            radius: radius)
-        case let .chamfer(body, edges, setback) where edges.contains(ref):
+        case let .chamfer(body, edges, setback, angle) where edges.contains(ref):
             return .chamfer(body: body,
                             edges: edges.map { $0 == ref ? upgraded : $0 },
-                            setback: setback)
+                            setback: setback, angle: angle)
         default:
             return nil
         }
@@ -1471,12 +1476,18 @@ nonisolated extension FeatureGraph {
         bodyRef: BodyRef,
         edgeRefs: [EdgeRef],
         amount: Double,
+        angleDegrees: Double = 0,
         isFillet: Bool,
         into state: inout EvalState,
         next nextRevision: () -> UInt64
     ) {
         guard amount > 1e-6 else {
             state.errors[node.id] = .kernelFailure("blend amount must be positive")
+            return
+        }
+        guard OCCTKernel.chamferAngleRadians(angleDegrees) != nil else {
+            state.errors[node.id] = .kernelFailure(
+                "chamfer angle must be between 0° and 90°")
             return
         }
         guard let body = state.bodies[bodyRef.bodyID] else {
@@ -1515,7 +1526,8 @@ nonisolated extension FeatureGraph {
                     ? OCCTKernel.filletResultWithAncestry(
                         brep, edgeIndices: unique, radius: amount)
                     : OCCTKernel.chamferResultWithAncestry(
-                        brep, edgeIndices: unique, distance: amount)
+                        brep, edgeIndices: unique, distance: amount,
+                        angleDegrees: angleDegrees)
                 switch blended {
                 case let .success((handle, ancestry)):
                     var result = Body(
@@ -1629,6 +1641,7 @@ nonisolated extension FeatureGraph {
                 ? OCCTKernel.filletResult(brep, at: midpoints, radius: amount,
                                           tolerance: tolerance)
                 : OCCTKernel.chamferResult(brep, at: midpoints, distance: amount,
+                                           angleDegrees: angleDegrees,
                                            tolerance: tolerance)
             guard case let .success(blended) = blended else {
                 if case let .failure(error) = blended {
@@ -1650,6 +1663,12 @@ nonisolated extension FeatureGraph {
             return
         }
 
+        // The mesh-domain fallback only knows the symmetric bevel.
+        if angleDegrees != 0 {
+            state.errors[node.id] = .kernelFailure(
+                "chamfer angle needs an exact (B-rep) body")
+            return
+        }
         let mesh = KernelOps.blendEdges(
             mesh: body.euclidMesh(), edges: specs, amount: amount, isFillet: isFillet)
         guard !mesh.polygons.isEmpty else {

@@ -97,7 +97,8 @@ nonisolated enum AgentExecOp: Sendable, Equatable {
     /// (TOPO_NAMING_HISTORY_DESIGN step 4b unblocked expressing this over
     /// the wire: the recorded refs carry durable `EdgeName`s, so the feature
     /// replays by identity like a hand-picked blend).
-    case blend(body: BodyID, isFillet: Bool, amount: Double, edges: [Int])
+    /// `angle` (degrees) is chamfer-only; 0 = the symmetric chamfer.
+    case blend(body: BodyID, isFillet: Bool, amount: Double, edges: [Int], angle: Double)
     /// Open faces are 1-based kernel face indices from `GET /v1/faces?body=`;
     /// EMPTY means a fully-enclosed hollow.
     case shell(body: BodyID, thickness: Double, openFaces: [Int])
@@ -515,8 +516,17 @@ nonisolated enum AgentExec {
                                       message: "args.\(key) must be > 0 mm."))
             }
             let edges = try edgeIndices(a, "edges", allowEmpty: false)
+            var angle = 0.0
+            if !isFillet, let given = try optionalDouble(a, "angle") {
+                guard given > 0, given < 90 else {
+                    return .failure(.init(
+                        code: "bad_angle",
+                        message: "args.angle must be between 0° and 90° (omit it for the symmetric chamfer)."))
+                }
+                angle = given
+            }
             return .success(.blend(body: body, isFillet: isFillet,
-                                   amount: amount, edges: edges))
+                                   amount: amount, edges: edges, angle: angle))
         } catch let e as AgentExecError { return .failure(e) } catch { return .failure(unexpected) }
     }
 

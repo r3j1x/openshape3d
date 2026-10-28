@@ -314,10 +314,10 @@ nonisolated enum ProjectMergeKit {
                     face: remap(face, translation: t),
                     neutralOrigin: PointWrapper(origin.point + t),
                     neutralNormal: normal, angle: angle)
-            case let .chamfer(body, edges, setback):
+            case let .chamfer(body, edges, setback, angle):
                 return .chamfer(body: remap(body),
                                 edges: edges.map { remap($0, translation: t) },
-                                setback: setback)
+                                setback: setback, angle: angle)
             case let .fillet(body, edges, radius):
                 return .fillet(body: remap(body),
                                edges: edges.map { remap($0, translation: t) },

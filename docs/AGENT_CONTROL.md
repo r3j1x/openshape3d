@@ -294,6 +294,7 @@ refs, not numbers) — the `EdgeName`/`ElementName` vocabulary closed that:
 ```json
 {"op":"feature.fillet","args":{"bodyID":"…","radius":1,"edges":[1,3]}}
 {"op":"feature.chamfer","args":{"bodyID":"…","setback":0.5,"edges":[7]}}
+{"op":"feature.chamfer","args":{"bodyID":"…","setback":2,"angle":30,"edges":[7]}}
 {"op":"feature.shell","args":{"bodyID":"…","thickness":0.5,"openFaces":[6]}}
 ```
 

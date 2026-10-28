@@ -557,6 +557,19 @@ struct EditorView: View {
             ExpressionValueField(placeholder: settings.unit.symbol, value: value,
                                  clamp: nil, identifier: "BlendValueField")
             Text(settings.unit.symbol).font(.caption).foregroundStyle(.barLabel).fixedSize()
+            // Chamfer only: free bevel angle. 0 keeps the symmetric chamfer;
+            // anything else makes the size above run along the first face
+            // and the bevel meet that face at this angle.
+            if kind == .chamfer {
+                let angle = Binding(
+                    get: { viewModel.blendAngle },
+                    set: { viewModel.blendAngle = min(max(0, $0), 89.99) })
+                Divider().frame(height: 20)
+                Text("Angle").font(.caption).foregroundStyle(.barLabel).fixedSize()
+                ExpressionValueField(placeholder: "0 = sym.", value: angle,
+                                     clamp: nil, identifier: "BlendAngleField")
+                Text("°").font(.caption).foregroundStyle(.barLabel).fixedSize()
+            }
             // While dragging, show the kernel-derived ceiling the drag is
             // clamped to, so the stop doesn't read as a stuck gesture.
             if let cap = viewModel.blendDragMax {

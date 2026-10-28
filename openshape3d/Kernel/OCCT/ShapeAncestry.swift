@@ -149,20 +149,26 @@ nonisolated extension OCCTKernel {
     }
 
     static func chamferResultWithAncestry(
-        _ handle: BRepHandle, edgeIndices: [Int], distance: Double
+        _ handle: BRepHandle, edgeIndices: [Int], distance: Double,
+        angleDegrees: Double = 0
     ) -> Result<(handle: BRepHandle, ancestry: ShapeAncestry), OCCTOpError> {
         guard !edgeIndices.isEmpty, distance > 0 else {
             return .failure(.kernelRefused("nothing to chamfer"))
+        }
+        guard let angleRadians = chamferAngleRadians(angleDegrees) else {
+            return .failure(.kernelRefused("chamfer angle must be between 0° and 90°"))
         }
         let status = OCCTOpStatus()
         let history = OCCTShapeHistory()
         guard let shape = OCCTBridge.chamferedShape(
             handle.shape, edgeIndices: packIndices(edgeIndices),
-            distance: distance, status: status, history: history) else {
+            distance: distance, angleRadians: angleRadians,
+            status: status, history: history) else {
             let error = OCCTOpError(status)
             KernelCapture.recordFailure(
                 op: "chamfer", inputs: [("shape", handle)],
-                params: ["distance": distance, "edgeIndices": edgeIndices],
+                params: ["distance": distance, "angleDegrees": angleDegrees,
+                         "edgeIndices": edgeIndices],
                 error: error)
             return .failure(error)
         }

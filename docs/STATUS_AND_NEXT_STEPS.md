@@ -5948,3 +5948,17 @@ volume against the printed number to 0.5 %.
 | 14 | Rib | 9 | 3 | 2 |
 | 15 | Configurations, Design Tables, Suppress | 16 | 1 | 1 |
 | 16 | Global Variables, Equations, Link Values | 7 | 4 | 4 |
+
+## Chamfer: free angle (distance + angle)
+
+`FeatureKind.chamfer` gained an optional `angle: Expr?` (degrees, 0 < a < 90;
+nil = the old symmetric chamfer, old projects decode unchanged). Kernel:
+`OCCTBridge` uses `BRepFilletAPI_MakeChamfer::AddDA(distance, angle, edge,
+firstAdjacentFace)` — `setback` runs along that face, the bevel meets it at
+`angle`. UI: "Angle" field in the chamfer bar (0 = symmetric); agent:
+`feature.chamfer` `angle`. B-rep bodies only (mesh fallback errors).
+**Not yet built or run** (written on Linux without Xcode): run
+`OCCTKernelTests/testChamferAngleScalesTheRemovedWedge` and
+`AgentExecTests/testChamferParsesOptionalAngle`. Open: which face is the
+"reference" is the edge's first adjacent face (arbitrary); a flip toggle,
+per-edge reference-face picking and the drag arrow for the angle are next.

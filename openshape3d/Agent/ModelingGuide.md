@@ -77,7 +77,7 @@ design. Launching the app is `docs/AI_MODELING_SETUP.md`.
 | `feature.sweep` | `sketchID`, `seedPoint`, `spine` `[[x,y,z],…]` (world) or `helix` `{axisPoint, axisDirection, radius, pitch, turns}`; the profile sketch sits at the spine's start, normal to it |
 | `feature.shell` | `bodyID`, `thickness` (positive hollows inward), `openFaces` `[faceIndex,…]` (omit for a sealed hollow) |
 | `feature.fillet` | `bodyID`, `radius`, `edges` `[edgeIndex,…]` |
-| `feature.chamfer` | `bodyID`, `setback`, `edges` `[edgeIndex,…]` |
+| `feature.chamfer` | `bodyID`, `setback`, `edges` `[edgeIndex,…]`, optional `angle` (degrees, 0–90 exclusive: `setback` then runs along the edge's first adjacent face and the bevel meets that face at `angle`; omit for the symmetric chamfer) |
 | `feature.boolean` | `kind` (`union` / `subtract` / `intersect`), `targetBodyID`, `toolBodyIDs[]` |
 | `feature.pattern` | `bodyID`, `count` (total, including the original); `kind` `circular` (default: about `axis`, default +Y, through `center`, over `totalAngleDegrees` 360) or `linear` (`axis` = direction, `spacing` mm) |
 | `feature.mirror` | `bodyID`, `planeOrigin`, `planeNormal`; `keepOriginal` true (default) leaves a mirrored copy, false moves the body |

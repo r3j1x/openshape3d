@@ -239,13 +239,29 @@ final class AgentExecTests: XCTestCase {
     func testFilletParsesEdgesAndRadius() throws {
         let id = UUID().uuidString
         let parsed = op(#"{"op":"feature.fillet","args":{"bodyID":"\#(id)","radius":1.5,"edges":[3,7]}}"#)
-        guard case let .blend(body, isFillet, amount, edges)? = parsed else {
+        guard case let .blend(body, isFillet, amount, edges, angle)? = parsed else {
             return XCTFail("expected .blend, got \(String(describing: parsed))")
         }
         XCTAssertEqual(body.raw.uuidString, id)
         XCTAssertTrue(isFillet)
         XCTAssertEqual(amount, 1.5)
         XCTAssertEqual(edges, [3, 7])
+        XCTAssertEqual(angle, 0)
+    }
+
+    func testChamferParsesOptionalAngle() {
+        let id = UUID().uuidString
+        let parsed = op(#"{"op":"feature.chamfer","args":{"bodyID":"\#(id)","setback":2,"angle":30,"edges":[1]}}"#)
+        guard case let .blend(_, isFillet, amount, _, angle)? = parsed else {
+            return XCTFail("expected .blend, got \(String(describing: parsed))")
+        }
+        XCTAssertFalse(isFillet)
+        XCTAssertEqual(amount, 2)
+        XCTAssertEqual(angle, 30)
+        XCTAssertEqual(code(#"{"op":"feature.chamfer","args":{"bodyID":"\#(id)","setback":2,"angle":90,"edges":[1]}}"#),
+                       "bad_angle")
+        XCTAssertEqual(code(#"{"op":"feature.chamfer","args":{"bodyID":"\#(id)","setback":2,"angle":0,"edges":[1]}}"#),
+                       "bad_angle", "omit the angle for symmetric; 0 is a typo")
     }
 
     func testChamferUsesSetbackAndFilletUsesRadius() {

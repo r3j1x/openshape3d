@@ -407,10 +407,12 @@ typedef NS_ENUM(NSInteger, OCCTOpCode) {
 /// Bevel the edges near `worldPoints` by `distance`
 /// (`BRepFilletAPI_MakeChamfer`) — the chamfer half of spec §4.3. Same
 /// edge-matching, pre-qualification, post-validation and tangent-chain
-/// behaviour as `filletedShape:`.
+/// behaviour as `filletedShape:`. `angleRadians` 0 = symmetric; > 0 = `distance`
+/// along each edge's first adjacent face, the bevel at that angle to the face.
 + (nullable OCCTShape *)chamferedShape:(OCCTShape *)shape
                         atWorldPoints:(NSData *)worldPoints
                              distance:(double)distance
+                         angleRadians:(double)angleRadians
                             tolerance:(double)tolerance
                                 status:(nullable OCCTOpStatus *)status;
 
@@ -473,6 +475,7 @@ typedef NS_ENUM(NSInteger, OCCTOpCode) {
 + (nullable OCCTShape *)chamferedShape:(OCCTShape *)shape
                            edgeIndices:(NSData *)edgeIndices
                               distance:(double)distance
+                          angleRadians:(double)angleRadians
                                 status:(nullable OCCTOpStatus *)status
                                history:(nullable OCCTShapeHistory *)history;
 

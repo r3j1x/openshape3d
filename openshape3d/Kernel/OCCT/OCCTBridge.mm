@@ -2648,7 +2648,8 @@ static OCCTShape *OS3DBlendEdgeSet(const TopoDS_Shape &shape,
                                    const std::set<Standard_Integer> &chosen,
                                    double amount, bool isFillet,
                                    OCCTOpStatus *status,
-                                   OCCTShapeHistory *history) {
+                                   OCCTShapeHistory *history,
+                                   double angleRadians = 0.0) {
     NSString *reason = nil;
     const std::set<Standard_Integer> qualified =
         OS3DBlendableEdges(shape, edgeMap, chosen, &reason);
@@ -2677,9 +2678,28 @@ static OCCTShape *OS3DBlendEdgeSet(const TopoDS_Shape &shape,
         return out;
     }
     BRepFilletAPI_MakeChamfer mk(shape);
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    if (angleRadians > 0.0) {
+        TopExp::MapShapesAndAncestors(shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    }
     for (Standard_Integer i : qualified) {
-        // Symmetric chamfer: equal setback on both adjacent faces.
-        mk.Add(amount, TopoDS::Edge(edgeMap(i)));
+        const TopoDS_Edge edge = TopoDS::Edge(edgeMap(i));
+        if (angleRadians <= 0.0) {
+            // Symmetric chamfer: equal setback on both adjacent faces.
+            mk.Add(amount, edge);
+            continue;
+        }
+        // Distance + angle: `amount` is the setback along the reference face
+        // (the edge's first adjacent face), `angleRadians` the angle the
+        // bevel makes with that face. 45° on a right-angle edge equals the
+        // symmetric chamfer.
+        const Standard_Integer at = edgeFaces.FindIndex(edge);
+        if (at == 0 || edgeFaces(at).IsEmpty()) {
+            OS3DSetStatus(status, OCCTOpCodeNoTargetMatched,
+                          @"the edge has no adjacent face to measure the angle from");
+            return nil;
+        }
+        mk.AddDA(amount, angleRadians, edge, TopoDS::Face(edgeFaces(at).First()));
     }
     OS3DDeadlineProgress *deadline =
         new OS3DDeadlineProgress(kOS3DOpDeadlineSeconds);
@@ -2702,7 +2722,8 @@ static OCCTShape *OS3DBlendEdgeSet(const TopoDS_Shape &shape,
 static OCCTShape *OS3DBlendByIndices(OCCTShape *shape, NSData *edgeIndices,
                                      double amount, bool isFillet,
                                      OCCTOpStatus *status,
-                                     OCCTShapeHistory *history) {
+                                     OCCTShapeHistory *history,
+                                     double angleRadians = 0.0) {
     OS3DSetStatus(status, OCCTOpCodeKernelRefused, @"no input");
     if (shape == nil || amount <= 0.0) return nil;
     const NSUInteger count = edgeIndices.length / sizeof(int32_t);
@@ -2726,7 +2747,7 @@ static OCCTShape *OS3DBlendByIndices(OCCTShape *shape, NSData *edgeIndices,
             chosen.insert((Standard_Integer)indices[i]);
         }
         return OS3DBlendEdgeSet(shape->_shape, edgeMap, chosen,
-                                amount, isFillet, status, history);
+                                amount, isFillet, status, history, angleRadians);
     } catch (Standard_Failure &e) {
         OS3DSetStatus(status, OCCTOpCodeKernelRefused,
                       [NSString stringWithFormat:@"%s", e.GetMessageString()]);
@@ -2748,9 +2769,11 @@ static OCCTShape *OS3DBlendByIndices(OCCTShape *shape, NSData *edgeIndices,
 + (nullable OCCTShape *)chamferedShape:(OCCTShape *)shape
                            edgeIndices:(NSData *)edgeIndices
                               distance:(double)distance
+                          angleRadians:(double)angleRadians
                                 status:(nullable OCCTOpStatus *)status
                                history:(nullable OCCTShapeHistory *)history {
-    return OS3DBlendByIndices(shape, edgeIndices, distance, false, status, history);
+    return OS3DBlendByIndices(shape, edgeIndices, distance, false, status, history,
+                              angleRadians);
 }
 
 /// Whether the face's UV domain is an untrimmed iso-rectangle — one wire,
@@ -3235,6 +3258,7 @@ static bool OS3DFilletBuilds(const TopoDS_Shape &shape,
 + (nullable OCCTShape *)chamferedShape:(OCCTShape *)shape
                         atWorldPoints:(NSData *)worldPoints
                              distance:(double)distance
+                         angleRadians:(double)angleRadians
                             tolerance:(double)tolerance
                                 status:(nullable OCCTOpStatus *)status {
     OS3DSetStatus(status, OCCTOpCodeKernelRefused, @"no input");
@@ -3266,7 +3290,8 @@ static bool OS3DFilletBuilds(const TopoDS_Shape &shape,
             return nil;
         }
         return OS3DBlendEdgeSet(shape->_shape, edgeMap, chosen,
-                                distance, /*isFillet*/ false, status, nil);
+                                distance, /*isFillet*/ false, status, nil,
+                                angleRadians);
     } catch (Standard_Failure &e) {
         OS3DSetStatus(status, OCCTOpCodeKernelRefused,
                       [NSString stringWithFormat:@"%s", e.GetMessageString()]);
